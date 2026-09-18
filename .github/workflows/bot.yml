@@ -2,24 +2,27 @@ name: Schedule bot
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # GitHub запускает не чаще раза в 5 минут (на деле бывает реже)
+    - cron: "*/10 * * * *"  # «будильник»: ставит следующий запуск в очередь
   workflow_dispatch:         # кнопка «Run workflow» для ручного запуска
 
 permissions:
   contents: write            # чтобы бот мог сохранять state/ в репозиторий
 
 concurrency:
-  group: telegram-bot        # никогда не запускать две копии бота одновременно
-  cancel-in-progress: false
+  group: telegram-bot        # одновременно работает только одна копия бота,
+  cancel-in-progress: false  # следующая ждёт в очереди и стартует сразу после неё
 
 jobs:
   bot:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          # берём самую свежую версию ветки, а не ту, что была в момент постановки в очередь
+          ref: ${{ github.event.repository.default_branch }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -30,7 +33,7 @@ jobs:
       - name: Run bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          RUN_SECONDS: "270"   # сколько секунд бот работает за один запуск
+          RUN_SECONDS: "3300"  # 55 минут работы за один запуск
         run: python bot.py
 
       - name: Save state
