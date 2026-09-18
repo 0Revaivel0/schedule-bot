@@ -1,6 +1,6 @@
 """Парсинг расписания с сайта РАНХиГС СПб и красивое форматирование для Telegram."""
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from html import escape
 
@@ -51,6 +51,7 @@ class Lesson:
     subject: str
     teacher: str
     room: str
+    combined: tuple = ()   # все группы, если практика совмещённая (иначе пусто)
 
 
 def _norm(s: str) -> str:
@@ -105,13 +106,34 @@ def parse_schedule(html: str) -> list[Lesson]:
     raise ValueError("На странице не найдена таблица расписания")
 
 
+def is_practice(kind: str) -> bool:
+    k = kind.lower()
+    return "практ" in k or "семинар" in k
+
+
+def _slot(l: Lesson) -> tuple:
+    """Одно и то же занятие: тот же день, время, предмет и преподаватель."""
+    return (l.day, l.start, _norm(l.subject), _norm(l.teacher))
+
+
 def filter_mine(lessons: list[Lesson], enabled_optional: set[str] = frozenset()) -> list[Lesson]:
+    # Какие группы сидят на каждом занятии — считаем по ВСЕЙ таблице, включая чужие группы
+    groups_in_slot: dict[tuple, set[str]] = {}
+    for l in lessons:
+        groups_in_slot.setdefault(_slot(l), set()).add(l.group.strip())
+
     seen, result = set(), []
     for l in lessons:
-        key = (l.day, l.start, l.subject, l.group)
-        if is_mine(l.group, enabled_optional) and key not in seen:
-            seen.add(key)
-            result.append(l)
+        if not is_mine(l.group, enabled_optional):
+            continue
+        slot = _slot(l)
+        if slot in seen:   # одно занятие, записанное на несколько моих групп, — показываем один раз
+            continue
+        seen.add(slot)
+        groups = groups_in_slot[slot]
+        if is_practice(l.kind) and len(groups) > 1:
+            l = replace(l, combined=tuple(sorted(groups)))
+        result.append(l)
     return sorted(result, key=lambda l: (l.day, l.start))
 
 
@@ -139,7 +161,9 @@ def _room_label(room: str) -> str:
     return f"📍 {room}" if room else "📍 —"
 
 
-def _group_note(group: str) -> str:
+def _group_note(group: str, combined: tuple = ()) -> str:
+    if combined:
+        return "👥 Совмещённая"
     g = _norm(group)
     if g == _norm(MY_GROUP_TITLE):
         return ""
@@ -163,7 +187,7 @@ def format_lesson(l: Lesson, num: int) -> str:
         _kind_label(l.kind),
         f"👤 {escape(l.teacher)}" if l.teacher else "",
         _room_label(escape(l.room)),
-        _group_note(escape(l.group)),
+        _group_note(escape(l.group), tuple(escape(g) for g in l.combined)),
     ]
     return "\n".join(x for x in lines if x)
 
