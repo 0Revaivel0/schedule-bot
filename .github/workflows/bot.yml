@@ -1,0 +1,49 @@
+name: Schedule bot
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # GitHub запускает не чаще раза в 5 минут (на деле бывает реже)
+  workflow_dispatch:         # кнопка «Run workflow» для ручного запуска
+
+permissions:
+  contents: write            # чтобы бот мог сохранять state/ в репозиторий
+
+concurrency:
+  group: telegram-bot        # никогда не запускать две копии бота одновременно
+  cancel-in-progress: false
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          RUN_SECONDS: "270"   # сколько секунд бот работает за один запуск
+        run: python bot.py
+
+      - name: Save state
+        if: always()
+        run: |
+          mkdir -p state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A state
+          if git diff --cached --quiet; then
+            echo "Состояние не изменилось"
+          else
+            git commit -m "Обновление состояния бота"
+            git pull --rebase
+            git push
+          fi
