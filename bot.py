@@ -47,6 +47,7 @@ dp = Dispatcher()
 
 # ─────────────────────────── РАСПИСАНИЕ (кэш в файле) ───────────────────────────
 _lessons: list[Lesson] | None = None
+_fetched_at = 0.0          # когда расписание в памяти было получено с сайта
 _lock = asyncio.Lock()
 
 
@@ -79,24 +80,27 @@ async def _download() -> str:
 
 async def get_lessons() -> list[Lesson]:
     """Все строки таблицы. Берём из файла, а с сайта скачиваем, если кэш старше 6 часов."""
-    global _lessons
+    global _lessons, _fetched_at
     async with _lock:
-        if _lessons is not None:
+        # Запуск теперь длится почти час, поэтому свежесть проверяем и для данных в памяти
+        if _lessons is not None and time.time() - _fetched_at < SCHEDULE_TTL:
             return _lessons
         cached, fetched_at = _load_schedule_file()
         if cached is not None and time.time() - fetched_at < SCHEDULE_TTL:
-            _lessons = cached
+            _lessons, _fetched_at = cached, fetched_at
             return _lessons
         try:
             lessons = parse_schedule(await _download())
             _save_schedule_file(lessons)
-            _lessons = lessons
+            _lessons, _fetched_at = lessons, time.time()
             logging.info("Расписание скачано с сайта: %d строк", len(lessons))
         except Exception:
             logging.exception("Не удалось скачать расписание с сайта")
-            if cached is None:
+            fallback = _lessons if _lessons is not None else cached
+            if fallback is None:
                 raise
-            _lessons = cached
+            _lessons = fallback
+            _fetched_at = time.time() - SCHEDULE_TTL + 600   # повторить попытку через 10 минут
             logging.info("Использую сохранённую копию расписания")
         return _lessons
 
