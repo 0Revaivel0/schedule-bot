@@ -25,9 +25,6 @@ OPTIONAL_GROUPS = {
 }
 MY_GROUP_TITLE = "ПЛ-3-24-02"
 
-# Номер пары по времени начала
-PAIR_NUMBERS = {"08:30": 1, "10:00": 2, "12:00": 3, "13:30": 4, "15:00": 5, "16:30": 6}
-
 WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля",
           "августа", "сентября", "октября", "ноября", "декабря"]
@@ -157,9 +154,8 @@ def day_title(d: date) -> str:
     return f"{WEEKDAYS[d.weekday()]}, {d.day} {MONTHS[d.month - 1]}"
 
 
-def format_lesson(l: Lesson) -> str:
-    num = PAIR_NUMBERS.get(l.start)
-    head = f"<b>{num} пара</b> · " if num else ""
+def format_lesson(l: Lesson, num: int) -> str:
+    head = f"<b>{num} пара</b> · "
     time_str = f"{l.start}–{l.end}" if l.end else l.start
     lines = [
         f"{head}🕐 <code>{time_str}</code>",
@@ -178,7 +174,11 @@ def format_day(d: date, lessons: list[Lesson], today: date | None = None) -> str
     day_lessons = [l for l in lessons if l.day == d]
     if not day_lessons:
         return f"{header}\n\n🎉 Пар нет — отдыхаем!"
-    body = "\n\n".join(format_lesson(l) for l in day_lessons)
+    # Нумеруем пары по порядку в этот день: первая по времени — «1 пара», и т.д.
+    # Если в одно время стоят два занятия, у них будет один номер.
+    starts = sorted({l.start for l in day_lessons})
+    number = {start: i + 1 for i, start in enumerate(starts)}
+    body = "\n\n".join(format_lesson(l, number[l.start]) for l in day_lessons)
     return f"{header}\n━━━━━━━━━━━━━━━\n{body}"
 
 
